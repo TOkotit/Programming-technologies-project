@@ -1,1 +1,29 @@
-# Programming-technologies-project
+# Техническое задание: Freelance Cashflow Forecaster
+
+1. Цель проекта
+Кратко: импортировать историю оплат фрилансера, автоматически категоризировать поступления, визуализировать и прогнозировать месячный cashflow на 3–6 мес.
+
+2. Роли пользователей
+- Гость: просмотр маркетинговой страницы.
+- Пользователь (фрилансер): регистрация, импорт CSV, просмотр дашборда, CRUD клиентов/проектов/счетов.
+- Админ: управление через admin.
+
+3. Модели (минимум 3)
+- Client: owner, name, email, notes.
+- Project: owner, client (FK), title, hourly_rate.
+- Category: owner, name.
+- Invoice: owner, project (FK), category (FK), date, amount, paid, external_id.
+
+4. User Stories (ключевые)
+- Как пользователь, я загружаю CSV со счетами, система разбирает строки и предлагает категорию.
+- Как пользователь, я вижу дашборд с суммами по месяцам и прогнозом на 6 месяцев.
+- Как пользователь, я могу создать/редактировать проект и привязать инвойсы к проекту.
+
+5. Acceptance criteria
+- Наличие TZ.md и README.md — ✔
+- Реализованы модели Client/Project/Category/Invoice с корректными полями — ✔
+- Импорт CSV работает и создает/обновляет записи — ✔
+- Дашборд отображает график (Plotly) и прогноз — ✔
+
+6. Технологии
+Python 3.13, Django 4.x, Pandas, scikit-learn, Plotly, Bootstrap 5, PythonAnywhere (deploy).

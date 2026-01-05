@@ -1,0 +1,10 @@
+{% extends "core/base.html" %}
+
+{% block title %}Вы вышли{% endblock %}
+
+{% block content %}
+  <div class="alert alert-info">
+    Вы успешно вышли из системы.
+  </div>
+  <a href="{% url 'login' %}" class="btn btn-primary">Войти снова</a>
+{% endblock %}

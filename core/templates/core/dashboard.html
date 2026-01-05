@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">Dashboard</h1>
+<div class="card shadow-sm">
+    <div class="card-body">
+        {% if plot_div %}
+            {{ plot_div|safe }}
+        {% else %}
+            <p class="text-center">No data available for chart.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,4 @@
+date,amount,client,project,category,paid,external_id,description
+2025-01-01,1500.50,ООО Ромашка,Website revamp,Development,True,INV-001,Payment for milestone 1
+2025-01-05,3200.00,ИП Иванов,Mobile app,Development,True,INV-002,Design phase
+2025-01-10,999.99,ЗАО Тест,Consulting,Consulting,True,INV-003,Consulting hours

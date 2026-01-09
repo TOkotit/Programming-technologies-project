@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+
+{% block title %}Upload CSV{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">Import invoices from CSV</h1>
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <div class="mb-3">
+        {{ form.file.label_tag }}
+        {{ form.file }}
+        {% if form.file.help_text %}
+          <div class="form-text">{{ form.file.help_text }}</div>
+        {% endif %}
+      </div>
+      <div class="d-grid gap-2">
+        <button type="submit" class="btn btn-primary">Upload and import</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if import_result %}
+  <div class="mt-4">
+    <h4>Import result</h4>
+    <ul>
+      <li>Created: {{ import_result.created }}</li>
+      <li>Skipped (duplicates): {{ import_result.skipped }}</li>
+    </ul>
+
+    {% if import_result.errors %}
+      <div class="alert alert-danger">
+        <strong>Errors:</strong>
+        <ul>
+          {% for err in import_result.errors %}
+            <li>{{ err }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+  </div>
+{% endif %}
+{% endblock %}

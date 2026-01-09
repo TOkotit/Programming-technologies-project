@@ -2,8 +2,6 @@ from django.contrib import admin
 from .models import Client, Project, Category, Invoice
 
 
-
-
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
     list_display = ('name', 'owner', 'email')

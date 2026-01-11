@@ -11,11 +11,11 @@ from django.utils import timezone
 import csv
 import io
 import decimal
-
+from django.db.models import Sum, Avg, Count, Q
 from .models import Invoice, Client, Project, Category
 from .forms import InvoiceForm, CSVUploadForm
 from .utils.forecast import forecast_monthly
-from .utils.importer import import_invoices_from_file  # сервис (ниже)
+from .utils.importer import import_invoices_from_file
 from plotly.offline import plot
 import plotly.graph_objs as go
 
@@ -26,7 +26,47 @@ class InvoiceListView(LoginRequiredMixin, ListView):
     paginate_by = 20
 
     def get_queryset(self):
-        return Invoice.objects.filter(owner=self.request.user).select_related('project', 'category')
+        qs = Invoice.objects.filter(owner=self.request.user).select_related('project', 'category', 'project__client')
+        q = self.request.GET
+
+        search = q.get('q')
+        if search:
+            qs = qs.filter(
+                Q(project__title__icontains=search) |
+                Q(project__client__name__icontains=search) |
+                Q(external_id__icontains=search) |
+                Q(description__icontains=search)
+            )
+
+        client = q.get('client')
+        if client:
+            qs = qs.filter(project__client__id=client)
+
+        project = q.get('project')
+        if project:
+            qs = qs.filter(project__id=project)
+
+        category = q.get('category')
+        if category:
+            qs = qs.filter(category__id=category)
+
+        paid = q.get('paid')
+        if paid in ('1', '0', 'true', 'false', 'True', 'False'):
+            if paid.lower() in ('1', 'true'):
+                qs = qs.filter(paid=True)
+            else:
+                qs = qs.filter(paid=False)
+
+        date_from = q.get('date_from')
+        date_to = q.get('date_to')
+        if date_from:
+            qs = qs.filter(date__gte=date_from)
+        if date_to:
+            qs = qs.filter(date__lte=date_to)
+
+        order = q.get('order', '-date')  # default: newest first
+        qs = qs.order_by(order)
+        return qs
 
 
 class InvoiceCreateView(LoginRequiredMixin, CreateView):
@@ -45,16 +85,44 @@ class DashboardView(LoginRequiredMixin, TemplateView):
 
     def get(self, request, *args, **kwargs):
         invoices = Invoice.objects.filter(owner=request.user)
+        agg = invoices.aggregate(
+            total=Sum('amount'),
+            avg=Avg('amount'),
+            count=Count('id'),
+            unpaid=Count('id', filter=Q(paid=False))
+        )
+
         data = forecast_monthly(invoices, months_ahead=6)
         historic = data['historic']
         forecast = data['forecast']
-        fig = go.Figure()
+
+        by_client = invoices.values('project__client__name').annotate(total=Sum('amount')).order_by('-total')
+        labels = [x['project__client__name'] or 'Unknown' for x in by_client]
+        values = [float(x['total'] or 0) for x in by_client]
+
+        pie = go.Figure()
+        if labels and values:
+            pie.add_trace(go.Pie(labels=labels, values=values, hole=0.3))
+
+        pie_div = plot(pie, output_type='div', include_plotlyjs=False)
+        main_fig = go.Figure()
         if not historic.empty:
-            fig.add_trace(go.Scatter(x=historic['month'], y=historic['value'], mode='lines+markers', name='Historic'))
+            main_fig.add_trace(
+                go.Scatter(x=historic['month'], y=historic['value'], mode='lines+markers', name='Historic'))
         if not forecast.empty:
-            fig.add_trace(go.Scatter(x=forecast['month'], y=forecast['value'], mode='lines+markers', name='Forecast'))
-        plot_div = plot(fig, output_type='div', include_plotlyjs=False)
-        return render(request, self.template_name, {'plot_div': plot_div})
+            main_fig.add_trace(
+                go.Scatter(x=forecast['month'], y=forecast['value'], mode='lines+markers', name='Forecast'))
+        main_plot = plot(main_fig, output_type='div', include_plotlyjs=False)
+
+        context = {
+            'plot_div': main_plot,
+            'pie_div': pie_div,
+            'total': agg['total'] or 0,
+            'avg': agg['avg'] or 0,
+            'count': agg['count'] or 0,
+            'unpaid': agg['unpaid'] or 0,
+        }
+        return render(request, self.template_name, context)
 
 
 class CSVUploadView(LoginRequiredMixin, FormView):
@@ -73,6 +141,18 @@ class CSVUploadView(LoginRequiredMixin, FormView):
         result = self.request.session.pop('import_result', None)
         ctx['import_result'] = result
         return ctx
+
+class CSVPreviewView(LoginRequiredMixin, FormView):
+    template_name = 'core/upload_preview.html'
+    form_class = CSVUploadForm
+
+    def form_valid(self, form):
+        f = form.cleaned_data['file']
+        decoded = f.read().decode('utf-8').splitlines()
+        reader = csv.reader(decoded)
+        rows = list(reader)[:50]
+        self.request.session['csv_preview'] = f.read().decode('utf-8')  # or better: store bytes
+        return render(self.request, 'core/upload_preview.html', {'rows': rows, 'form': form})
 
 
 class ExportInvoicesCSVView(LoginRequiredMixin, View):

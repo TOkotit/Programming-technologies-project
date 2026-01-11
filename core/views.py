@@ -14,8 +14,6 @@ from .models import Invoice, Client, Project, Category
 from .forms import InvoiceForm, CSVUploadForm
 from .utils.forecast import forecast_monthly
 from .utils.importer import import_invoices_from_file
-from plotly.offline import plot
-import plotly.graph_objs as go
 
 
 class InvoiceListView(LoginRequiredMixin, ListView):
@@ -90,35 +88,21 @@ class DashboardView(LoginRequiredMixin, TemplateView):
             unpaid=Count('id', filter=Q(paid=False))
         )
 
-        data = forecast_monthly(invoices, months_ahead=6)
-        historic = data['historic']
-        forecast = data['forecast']
+        forecast_data = forecast_monthly(invoices, months_ahead=6)
 
         by_client = invoices.values('project__client__name').annotate(total=Sum('amount')).order_by('-total')
-        labels = [x['project__client__name'] or 'Unknown' for x in by_client]
-        values = [float(x['total'] or 0) for x in by_client]
-
-        pie = go.Figure()
-        if labels and values:
-            pie.add_trace(go.Pie(labels=labels, values=values, hole=0.3))
-
-        pie_div = plot(pie, output_type='div', include_plotlyjs=False)
-        main_fig = go.Figure()
-        if not historic.empty:
-            main_fig.add_trace(
-                go.Scatter(x=historic['month'], y=historic['value'], mode='lines+markers', name='Historic'))
-        if not forecast.empty:
-            main_fig.add_trace(
-                go.Scatter(x=forecast['month'], y=forecast['value'], mode='lines+markers', name='Forecast'))
-        main_plot = plot(main_fig, output_type='div', include_plotlyjs=False)
+        client_labels = [x['project__client__name'] or 'Unknown' for x in by_client]
+        client_values = [float(x['total'] or 0) for x in by_client]
 
         context = {
-            'plot_div': main_plot,
-            'pie_div': pie_div,
             'total': agg['total'] or 0,
             'avg': agg['avg'] or 0,
             'count': agg['count'] or 0,
             'unpaid': agg['unpaid'] or 0,
+            'client_labels': client_labels,
+            'client_values': client_values,
+            'historic_data': forecast_data['historic'],
+            'forecast_data': forecast_data['forecast'],
         }
         return render(request, self.template_name, context)
 

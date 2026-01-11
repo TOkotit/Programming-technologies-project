@@ -3,14 +3,46 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block content %}
-<h1 class="mb-4">Dashboard</h1>
-<div class="card shadow-sm">
-    <div class="card-body">
-        {% if plot_div %}
-            {{ plot_div|safe }}
-        {% else %}
-            <p class="text-center">No data available for chart.</p>
-        {% endif %}
+<div class="row">
+    <div class="col-md-8">
+        <canvas id="mainChart"></canvas>
+    </div>
+    <div class="col-md-4">
+        <canvas id="pieChart"></canvas>
     </div>
 </div>
+
+<script>
+    const mainCtx = document.getElementById('mainChart').getContext('2d');
+    new Chart(mainCtx, {
+        type: 'line',
+        data: {
+            labels: [{% for d in historic_data %}"{{ d.month }}",{% endfor %} {% for d in forecast_data %}"{{ d.month }}",{% endfor %}],
+            datasets: [{
+                label: 'История',
+                data: [{% for d in historic_data %}{{ d.value }},{% endfor %}],
+                borderColor: 'blue'
+            }, {
+                label: 'Прогноз',
+                data: [
+                    {% for i in historic_data %}null,{% endfor %} // Пропускаем исторические точки
+                    {% for d in forecast_data %}{{ d.value }},{% endfor %}
+                ],
+                borderColor: 'green',
+                borderDash: [5, 5]
+            }]
+        }
+    });
+
+    const pieCtx = document.getElementById('pieChart').getContext('2d');
+    new Chart(pieCtx, {
+        type: 'doughnut',
+        data: {
+            labels: {{ client_labels|safe }},
+            datasets: [{
+                data: {{ client_values|safe }},
+            }]
+        }
+    });
+</script>
 {% endblock %}

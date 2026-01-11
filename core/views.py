@@ -9,8 +9,6 @@ from django.db import transaction
 from django.utils import timezone
 
 import csv
-import io
-import decimal
 from django.db.models import Sum, Avg, Count, Q
 from .models import Invoice, Client, Project, Category
 from .forms import InvoiceForm, CSVUploadForm

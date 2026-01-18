@@ -1,4 +1,3 @@
-# core/views.py
 from django.views.generic import ListView, CreateView, TemplateView, FormView, View
 from django.urls import reverse_lazy
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -9,13 +8,18 @@ from django.db import transaction
 from django.utils import timezone
 from django.contrib.auth import login
 import csv
+from datetime import date
 from django.http import JsonResponse
 from django.db.models import Sum, Avg, Count, Q
-from .models import Invoice, Client, Project, Category
 from .forms import InvoiceForm, CSVUploadForm
-from .utils.forecast import forecast_monthly
 from .utils.importer import import_invoices_from_file
-
+from django.db.models.functions import TruncMonth
+from django.views.generic import TemplateView
+from django.shortcuts import render
+from django.db.models import Sum, Avg, Count, Q
+from django.db.models.functions import TruncMonth
+from .models import Invoice
+from .utils.forecast import forecast_monthly
 
 class InvoiceListView(LoginRequiredMixin, ListView):
     model = Invoice
@@ -81,29 +85,54 @@ class DashboardView(LoginRequiredMixin, TemplateView):
     template_name = 'core/dashboard.html'
 
     def get(self, request, *args, **kwargs):
-        invoices = Invoice.objects.filter(owner=request.user)
+        user = request.user
+        invoices = Invoice.objects.filter(owner=user)
+
         agg = invoices.aggregate(
             total=Sum('amount'),
             avg=Avg('amount'),
             count=Count('id'),
-            unpaid=Count('id', filter=Q(paid=False))
+            unpaid_count=Count('id', filter=Q(paid=False)),
+            unpaid_sum=Sum('amount', filter=Q(paid=False)),
         )
 
-        forecast_data = forecast_monthly(invoices, months_ahead=6)
+        today = date.today()
+        overdue_agg = invoices.filter(paid=False, date__lt=today).aggregate(
+            overdue_sum=Sum('amount'),
+            overdue_count=Count('id')
+        )
 
+        # best month
+        best = invoices.annotate(month=TruncMonth('date')) \
+            .values('month') \
+            .annotate(total=Sum('amount')) \
+            .order_by('-total') \
+            .first()
+        best_month = best['month'].strftime('%Y-%m') if best and best.get('month') else None
+
+        # Forecast (this function returns lists of dicts already)
+        forecast_dict = forecast_monthly(invoices, months_ahead=6)
+        historic_data = forecast_dict.get('historic', []) or []
+        forecast_data = forecast_dict.get('forecast', []) or []
+
+        # by client for pie
         by_client = invoices.values('project__client__name').annotate(total=Sum('amount')).order_by('-total')
         client_labels = [x['project__client__name'] or 'Unknown' for x in by_client]
         client_values = [float(x['total'] or 0) for x in by_client]
 
         context = {
-            'total': agg['total'] or 0,
-            'avg': agg['avg'] or 0,
-            'count': agg['count'] or 0,
-            'unpaid': agg['unpaid'] or 0,
+            'total_income': float(agg['total'] or 0),
+            'avg_amount': float(agg['avg'] or 0),
+            'count': int(agg['count'] or 0),
+            'unpaid_count': int(agg['unpaid_count'] or 0),
+            'unpaid_sum': float(agg['unpaid_sum'] or 0),
+            'overdue_sum': float(overdue_agg.get('overdue_sum') or 0),
+            'overdue_count': int(overdue_agg.get('overdue_count') or 0),
+            'best_month': best_month,
+            'historic_data': historic_data,
+            'forecast_data': forecast_data,
             'client_labels': client_labels,
             'client_values': client_values,
-            'historic_data': forecast_data['historic'],
-            'forecast_data': forecast_data['forecast'],
         }
         return render(request, self.template_name, context)
 

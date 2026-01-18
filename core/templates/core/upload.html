@@ -1,46 +1,270 @@
 {% extends 'base.html' %}
+{% load static %}
 
-{% block title %}Upload CSV{% endblock %}
+{% block title %}Import CSV{% endblock %}
 
 {% block content %}
 <h1 class="mb-4">Import invoices from CSV</h1>
-<div class="card shadow-sm">
-  <div class="card-body">
-    <form method="post" enctype="multipart/form-data">
-      {% csrf_token %}
-      {{ form.non_field_errors }}
-      <div class="mb-3">
-        {{ form.file.label_tag }}
-        {{ form.file }}
-        {% if form.file.help_text %}
-          <div class="form-text">{{ form.file.help_text }}</div>
-        {% endif %}
-      </div>
-      <div class="d-grid gap-2">
-        <button type="submit" class="btn btn-primary">Upload and import</button>
-      </div>
-    </form>
-  </div>
-</div>
 
-{% if import_result %}
-  <div class="mt-4">
-    <h4>Import result</h4>
-    <ul>
-      <li>Created: {{ import_result.created }}</li>
-      <li>Skipped (duplicates): {{ import_result.skipped }}</li>
-    </ul>
+<div class="row">
+  <div class="col-lg-7">
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <h5 class="card-title">Загрузить CSV</h5>
+        <p class="card-text text-muted">
+          Загрузите CSV-файл с инвойсами. Система попытается импортировать записи и при необходимости создаст клиентов/проекты/категории.
+        </p>
 
-    {% if import_result.errors %}
-      <div class="alert alert-danger">
-        <strong>Errors:</strong>
-        <ul>
-          {% for err in import_result.errors %}
-            <li>{{ err }}</li>
-          {% endfor %}
-        </ul>
+        <form id="csv-form" method="post" enctype="multipart/form-data" novalidate>
+          {% csrf_token %}
+          {{ form.non_field_errors }}
+
+          <div class="mb-3">
+            <label class="form-label">Файл CSV</label>
+            <div class="border rounded p-3" id="drop-area" style="background:#fafafa;">
+              <input id="file-input" name="file" type="file" accept=".csv,text/csv" class="form-control" style="display:none;">
+              <div id="drop-hint" class="text-center">
+                <p class="mb-1">Перетащите CSV сюда или</p>
+                <button type="button" id="pick-file" class="btn btn-outline-primary btn-sm">Выбрать файл</button>
+                <p class="mt-2 text-muted small">Поддерживаемые форматы: <strong>CSV</strong>. Кодировка: <strong>UTF-8</strong>.</p>
+              </div>
+              <div id="selected-file" class="mt-2" style="display:none;">
+                <strong>Выбран файл:</strong> <span id="filename"></span>
+                <button type="button" id="clear-file" class="btn btn-link btn-sm">Очистить</button>
+              </div>
+            </div>
+            {% if form.file.help_text %}
+              <div class="form-text mt-2">{{ form.file.help_text }}</div>
+            {% endif %}
+          </div>
+
+          <div id="client-errors" class="alert alert-danger" style="display:none;"></div>
+
+          <div class="d-flex gap-2">
+            <button id="submit-btn" type="submit" class="btn btn-primary">Upload and import</button>
+            <a id="download-sample" class="btn btn-outline-secondary" download="invoices_sample.csv">Скачать пример CSV</a>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    {% if import_result %}
+      <div class="card shadow-sm mb-3">
+        <div class="card-body">
+          <h5 class="card-title">Результат импорта</h5>
+          <ul>
+            <li><strong>Создано:</strong> {{ import_result.created }}</li>
+            <li><strong>Пропущено (дубликаты):</strong> {{ import_result.skipped }}</li>
+          </ul>
+
+          {% if import_result.errors %}
+            <div class="alert alert-danger">
+              <strong>Ошибки:</strong>
+              <ul class="mb-0">
+                {% for err in import_result.errors %}
+                  <li>{{ err }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% endif %}
+        </div>
       </div>
     {% endif %}
   </div>
-{% endif %}
+
+  <div class="col-lg-5">
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <h6 class="card-subtitle mb-2 text-muted">Требуемые столбцы</h6>
+        <p class="small mb-2">CSV должен содержать заголовок и минимум следующие колонки (в любом порядке):</p>
+
+        <ul>
+          <li><code>date</code> — дата инвойса, формат <strong>YYYY-MM-DD</strong>.</li>
+          <li><code>amount</code> — сумма (десятичное число), пример: <em>1234.50</em>.</li>
+          <li><code>client</code> — имя клиента.</li>
+          <li><code>project</code> — название проекта.</li>
+          <li><code>category</code> — категория дохода.</li>
+          <li><code>paid</code> — оплачено: <em>True/False</em> или <em>1/0</em>.</li>
+          <li><code>external_id</code> — внешний идентификатор (опционально).</li>
+          <li><code>description</code> — описание (опционально).</li>
+        </ul>
+
+        <hr>
+
+        <h6 class="card-subtitle mb-2 text-muted">Превью CSV перед загрузкой</h6>
+        <p class="small text-muted">После выбора файла появится превью первых строк и проверка наличия требуемых колонок.</p>
+
+        <div id="preview-area" style="max-height:300px; overflow:auto;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const REQUIRED = ['date','amount','client','project','category','paid','external_id','description'];
+
+  const pickBtn = document.getElementById('pick-file');
+  const fileInput = document.getElementById('file-input');
+  const dropArea = document.getElementById('drop-area');
+  const selectedFile = document.getElementById('selected-file');
+  const filenameSpan = document.getElementById('filename');
+  const clearBtn = document.getElementById('clear-file');
+  const preview = document.getElementById('preview-area');
+  const clientErrors = document.getElementById('client-errors');
+  const submitBtn = document.getElementById('submit-btn');
+  const downloadSample = document.getElementById('download-sample');
+  const csvForm = document.getElementById('csv-form');
+
+  const sampleCSV = `date,amount,client,project,category,paid,external_id,description
+2024-01-05,1500.00,Acme Co,Website revamp,Design,True,inv-1001,Initial payment
+2024-01-25,3500.50,Acme Co,Website revamp,Development,False,inv-1002,Milestone 1
+2024-02-10,2200.00,Beta Ltd,Mobile app,Consulting,True,inv-1003,Final delivery
+2024-03-01,4100.00,Gamma Group,Analytics,Analysis,True,inv-1004,Monthly retainer
+`;
+  downloadSample.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(sampleCSV);
+
+  function parseCSV(text, maxRows=20) {
+    const rows = [];
+    let i = 0;
+    let cur = '';
+    let row = [];
+    let inQuotes = false;
+    const pushCell = () => { row.push(cur); cur = ''; };
+
+    while (i < text.length && rows.length < maxRows) {
+      const ch = text[i];
+      if (ch === '"') {
+        if (inQuotes && text[i+1] === '"') {
+          cur += '"'; i += 2; continue;
+        }
+        inQuotes = !inQuotes;
+        i++; continue;
+      }
+      if (!inQuotes && (ch === ',' || ch === '\n' || ch === '\r')) {
+        pushCell();
+        if (ch === '\r' && text[i+1] === '\n') i++;
+        if (ch === '\n' || (ch === '\r' && text[i+1] !== '\n')) {
+          rows.push(row);
+          row = [];
+        }
+        i++; continue;
+      }
+      cur += ch;
+      i++;
+    }
+    if (cur !== '' || row.length>0) {
+      pushCell();
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  function showPreview(text) {
+    preview.innerHTML = '';
+    const rows = parseCSV(text, 15);
+    if (!rows || rows.length === 0) {
+      preview.innerHTML = '<div class="text-muted small">Файл пуст или не может быть прочитан.</div>';
+      return;
+    }
+    const header = rows[0].map(h => String(h).trim());
+    const headerLower = header.map(h => h.toLowerCase());
+    const table = document.createElement('table');
+    table.className = 'table table-sm table-bordered mb-2';
+    const thead = document.createElement('thead');
+    const trh = document.createElement('tr');
+    header.forEach(h => {
+      const th = document.createElement('th');
+      th.style.whiteSpace = 'nowrap';
+      th.textContent = h;
+      trh.appendChild(th);
+    });
+    thead.appendChild(trh);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    for (let r = 1; r < rows.length; r++) {
+      const tr = document.createElement('tr');
+      rows[r].forEach(cell => {
+        const td = document.createElement('td');
+        td.textContent = cell;
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    preview.appendChild(table);
+
+    const missing = REQUIRED.filter(req => !headerLower.includes(req));
+    if (missing.length) {
+      clientErrors.style.display = 'block';
+      clientErrors.innerHTML = `<strong>Неправильный формат:</strong> в файле не найдены столбцы: <code>${missing.join(', ')}</code>.`;
+      submitBtn.disabled = true;
+    } else {
+      clientErrors.style.display = 'none';
+      clientErrors.innerHTML = '';
+      submitBtn.disabled = false;
+    }
+  }
+
+  function handleFile(file) {
+    if (!file) return;
+    filenameSpan.textContent = file.name;
+    selectedFile.style.display = 'block';
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const text = e.target.result;
+      showPreview(text);
+    };
+    reader.onerror = function() {
+      preview.innerHTML = '<div class="text-danger small">Не удалось прочитать файл.</div>';
+    };
+    reader.readAsText(file, 'utf-8');
+  }
+
+  pickBtn.addEventListener('click', function(){ fileInput.click(); });
+  fileInput.addEventListener('change', function(e){
+    const f = e.target.files[0];
+    handleFile(f);
+  });
+
+  clearBtn.addEventListener('click', function(){
+    fileInput.value = '';
+    selectedFile.style.display = 'none';
+    filenameSpan.textContent = '';
+    preview.innerHTML = '';
+    clientErrors.style.display = 'none';
+    submitBtn.disabled = false;
+  });
+
+  ;['dragenter','dragover'].forEach(ev => {
+    dropArea.addEventListener(ev, function(e){ e.preventDefault(); dropArea.classList.add('border-primary'); });
+  });
+  ;['dragleave','drop'].forEach(ev => {
+    dropArea.addEventListener(ev, function(e){ e.preventDefault(); dropArea.classList.remove('border-primary'); });
+  });
+  dropArea.addEventListener('drop', function(e){
+    e.preventDefault();
+    const f = (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) || null;
+    if (f) {
+      fileInput.files = e.dataTransfer.files;
+      handleFile(f);
+    }
+  });
+
+  csvForm.addEventListener('submit', function(e){
+    if (!fileInput.files || !fileInput.files.length) {
+      if (!confirm('Вы не выбрали файл. Продолжить?')) {
+        e.preventDefault();
+        return;
+      }
+    }
+    if (clientErrors.style.display === 'block') {
+      alert('В файле обнаружены ошибки. Исправьте их перед отправкой.');
+      e.preventDefault();
+    }
+  });
+})();
+</script>
+
 {% endblock %}

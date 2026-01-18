@@ -28,6 +28,6 @@ class CategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Invoice)
 class InvoiceAdmin(admin.ModelAdmin):
-    list_display = ('date', 'owner', 'project', 'amount', 'paid', 'external_id')
-    search_fields = ('project__title', 'owner__username', 'external_id')
-    list_filter = ('paid', 'date', 'category')
+    list_display = ('date', 'owner', 'project', 'amount', 'paid', 'status')
+    list_filter = ('status', 'paid', 'date')
+    search_fields = ('project__title', 'project__client__name', 'external_id', 'description')

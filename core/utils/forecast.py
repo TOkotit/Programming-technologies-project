@@ -1,92 +1,107 @@
-from collections import defaultdict
+import numpy as np
+from scipy.optimize import minimize
 from datetime import date
-import math
+from django.db.models.functions import TruncMonth
+from django.db.models import Sum
 
 
-def _month_key(d):
-    return d.year, d.month
-
-
-def _add_months(d, n):
-    y = d.year + (d.month - 1 + n) // 12
-    m = (d.month - 1 + n) % 12 + 1
+def _month_add(dt, months):
+    y = dt.year + (dt.month - 1 + months) // 12
+    m = (dt.month - 1 + months) % 12 + 1
     return date(y, m, 1)
 
 
-def forecast_monthly(invoices, months_ahead=6, alpha=0.4):
-    """
-    Lightweight forecast without heavy libraries.
-    Model: trend + seasonality + exponential smoothing
-    """
+def initial_trend(series, slen):
+    sum_val = 0.0
+    for i in range(slen):
+        sum_val += float(series[i + slen] - series[i]) / slen
+    return sum_val / slen
 
-    # --- 1. Aggregate invoices by month ---
-    monthly = defaultdict(float)
-    for inv in invoices:
-        k = _month_key(inv.date)
-        monthly[k] += float(inv.amount)
 
-    if not monthly:
-        return {"historic": [], "forecast": []}
+def initial_seasonal_components(series, slen):
+    seasonals = {}
+    season_averages = []
+    n_seasons = len(series) // slen
+    for j in range(n_seasons):
+        season_averages.append(sum(series[slen * j:slen * j + slen]) / float(slen))
+    for i in range(slen):
+        sum_of_vals_over_avg = 0.0
+        for j in range(n_seasons):
+            sum_of_vals_over_avg += series[slen * j + i] - season_averages[j]
+        seasonals[i] = sum_of_vals_over_avg / n_seasons
+    return seasonals
 
-    months = sorted(monthly.keys())
-    values = [monthly[m] for m in months]
 
-    # --- 2. Exponential smoothing (EMA) ---
-    smoothed = []
-    for v in values:
-        if not smoothed:
-            smoothed.append(v)
-        else:
-            smoothed.append(alpha * v + (1 - alpha) * smoothed[-1])
+def triple_exponential_smoothing(series, slen, n_preds, alpha, beta, gamma):
+    result = []
+    seasonals = initial_seasonal_components(series, slen)
+    for i in range(len(series) + n_preds):
+        if i == 0:
+            smooth = series[0]
+            trend = initial_trend(series, slen)
+            result.append(series[0])
+            continue
+        if i >= len(series):  # Прогноз
+            m = i - len(series) + 1
+            result.append((smooth + m * trend) + seasonals[i % slen])
+        else:  # Обучение
+            val = series[i]
+            last_smooth, smooth = smooth, alpha * (val - seasonals[i % slen]) + (1 - alpha) * (smooth + trend)
+            trend = beta * (smooth - last_smooth) + (1 - beta) * trend
+            seasonals[i % slen] = gamma * (val - smooth) + (1 - gamma) * seasonals[i % slen]
+            result.append(smooth + trend + seasonals[i % slen])
+    return result
 
-    # --- 3. Linear trend (least squares) ---
-    n = len(smoothed)
-    x = list(range(n))
-    y = smoothed
 
-    x_mean = sum(x) / n
-    y_mean = sum(y) / n
+def forecast_monthly(invoices_qs, months_ahead=6):
+    # 1. Подготовка данных через NumPy
+    monthly = (
+        invoices_qs
+        .annotate(month=TruncMonth('date'))
+        .values('month')
+        .annotate(total=Sum('amount'))
+        .order_by('month')
+    )
 
-    num = sum((x[i] - x_mean) * (y[i] - y_mean) for i in range(n))
-    den = sum((x[i] - x_mean) ** 2 for i in range(n))
-    slope = num / den if den else 0
-    intercept = y_mean - slope * x_mean
+    points = [(r['month'], float(r['total'] or 0)) for r in monthly if r['month']]
+    if len(points) < 4:  # Для Хольта-Уинтерса нужно хотя бы немного данных
+        return {'historic': [], 'forecast': []}
 
-    # --- 4. Seasonality (month factors) ---
-    season = defaultdict(list)
-    for (y_, m_), v in zip(months, smoothed):
-        season[m_].append(v)
+    series = np.array([p[1] for p in points])
+    dates = [p[0] for p in points]
+    slen = 3  # Предположим квартальную сезонность для малых данных, или 12 для годовой
 
-    season_avg = {m: sum(vs) / len(vs) for m, vs in season.items()}
-    overall_avg = sum(smoothed) / len(smoothed)
+    # 2. Оптимизация параметров alpha, beta, gamma через SciPy
+    def objective(params):
+        a, b, g = params
+        preds = triple_exponential_smoothing(series, slen, 0, a, b, g)
+        return np.sqrt(np.mean((series - preds) ** 2))  # RMSE
 
-    season_factor = {
-        m: (season_avg[m] / overall_avg if overall_avg else 1.0)
-        for m in season_avg
-    }
+    opt = minimize(objective, x0=[0.1, 0.1, 0.1], bounds=((0, 1), (0, 1), (0, 1)))
+    a_opt, b_opt, g_opt = opt.x
 
-    # --- 5. Forecast ---
-    last_month = date(months[-1][0], months[-1][1], 1)
-    forecast = []
+    # 3. Генерация прогноза
+    full_series = triple_exponential_smoothing(series, slen, months_ahead, a_opt, b_opt, g_opt)
 
-    for i in range(1, months_ahead + 1):
-        base = slope * (n + i) + intercept
-        month_num = _add_months(last_month, i).month
-        factor = season_factor.get(month_num, 1.0)
-        value = max(0.0, base * factor)
+    # 4. Расчет доверительного интервала (упрощенно через std)
+    std_dev = np.std(series - np.array(full_series[:len(series)]))
 
-        forecast.append({
-            "month": _add_months(last_month, i),
-            "value": round(value, 2)
+    historic = []
+    for i in range(len(series)):
+        historic.append({
+            'month': dates[i].strftime('%Y-%m'),
+            'value': round(series[i], 2)
         })
 
-    # --- Output format (compatible with your dashboard) ---
-    historic = [
-        {"month": date(y, m, 1), "value": round(v, 2)}
-        for (y, m), v in zip(months, values)
-    ]
+    forecast = []
+    last_date = dates[-1]
+    for i in range(months_ahead):
+        val = full_series[len(series) + i]
+        forecast.append({
+            'month': _month_add(last_date, i + 1).strftime('%Y-%m'),
+            'value': round(max(0, val), 2),
+            'upper': round(max(0, val + 1.96 * std_dev), 2),  # 95% интервал
+            'lower': round(max(0, val - 1.96 * std_dev), 2)
+        })
 
-    return {
-        "historic": historic,
-        "forecast": forecast
-    }
+    return {'historic': historic, 'forecast': forecast, 'rmse': round(opt.fun, 2)}

@@ -10,14 +10,7 @@ REQUIRED_COLUMNS = {'date', 'amount', 'client', 'project', 'category', 'paid', '
 
 
 def import_invoices_from_file(fileobj, owner):
-    """
-    fileobj — UploadedFile (InMemoryUploadedFile) or file-like (opened)
-    owner — User instance
-
-    возвращает dict: {'created': n, 'skipped': m, 'errors': [..]}
-    """
     result = {'created': 0, 'skipped': 0, 'errors': []}
-    # fileobj может быть InMemoryUploadedFile: нужно декодировать
     decoded = (line.decode('utf-8') if isinstance(line, (bytes, bytearray)) else line for line in fileobj)
     reader = csv.DictReader(decoded)
     headers = set(reader.fieldnames or [])

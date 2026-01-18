@@ -3,46 +3,181 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-md-8">
-        <canvas id="mainChart"></canvas>
+<h1 class="mb-4">Dashboard</h1>
+
+<div class="row mb-4 g-3">
+    <div class="col-md-3">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h6 class="text-muted">Total income</h6>
+                <h3>{{ total_income|floatformat:2 }}</h3>
+            </div>
+        </div>
     </div>
-    <div class="col-md-4">
-        <canvas id="pieChart"></canvas>
+
+    <div class="col-md-3">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h6 class="text-muted">Average invoice</h6>
+                <h3>{{ avg_amount|floatformat:2 }}</h3>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h6 class="text-muted">Unpaid</h6>
+                <h3>{{ unpaid_sum|floatformat:2 }}</h3>
+                <small class="text-muted">{{ unpaid_count }} invoices</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h6 class="text-muted">Overdue</h6>
+                <h3>{{ overdue_sum|floatformat:2 }}</h3>
+            </div>
+        </div>
     </div>
 </div>
 
+<div class="row">
+    <div class="col-md-8">
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <h5 class="mb-3">Cashflow (history + forecast)</h5>
+                <canvas id="mainChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <h5 class="mb-3">By clients</h5>
+                <canvas id="pieChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- небольшая панель для отладки -->
+<div class="mb-4">
+    <small class="text-muted">Debug:
+        historic: {{ historic_data|length }},
+        forecast: {{ forecast_data|length }}
+    </small>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <script>
+/*
+  Стратегия:
+  - labels = historic.months + forecast.months
+  - historyData = historic.values + (null * forecast.length)
+  - forecastData = (null * historic.length) + forecast.values
+*/
+
+(function(){
+    // build labels and arrays safely
+    const historic = [
+        {% for d in historic_data %}
+        { month: "{{ d.month }}", value: {{ d.value }} }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ];
+    const forecast = [
+        {% for d in forecast_data %}
+        { month: "{{ d.month }}", value: {{ d.value }} }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ];
+
+    // Debug prints
+    console.log("historic:", historic);
+    console.log("forecast:", forecast);
+
+    // labels combined
+    const labels = historic.map(x => x.month).concat(forecast.map(x => x.month));
+
+    // historyData: values for historic, then nulls for forecast part
+    const historyData = historic.map(x => (typeof x.value === 'number' ? x.value : Number(x.value)))
+        .concat(Array(forecast.length).fill(null));
+
+    // forecastData: leading nulls for historic part, then forecast values
+    const forecastData = Array(historic.length).fill(null)
+        .concat(forecast.map(x => (typeof x.value === 'number' ? x.value : Number(x.value))));
+
+    console.log("labels.length", labels.length);
+    console.log("historyData.length", historyData.length);
+    console.log("forecastData.length", forecastData.length);
+
     const mainCtx = document.getElementById('mainChart').getContext('2d');
+
     new Chart(mainCtx, {
         type: 'line',
         data: {
-            labels: [{% for d in historic_data %}"{{ d.month }}",{% endfor %} {% for d in forecast_data %}"{{ d.month }}",{% endfor %}],
-            datasets: [{
-                label: 'История',
-                data: [{% for d in historic_data %}{{ d.value }},{% endfor %}],
-                borderColor: 'blue'
-            }, {
-                label: 'Прогноз',
-                data: [
-                    {% for i in historic_data %}null,{% endfor %} // Пропускаем исторические точки
-                    {% for d in forecast_data %}{{ d.value }},{% endfor %}
-                ],
-                borderColor: 'green',
-                borderDash: [5, 5]
-            }]
+            labels: labels,
+            datasets: [
+                {
+                    label: 'History',
+                    data: historyData,
+                    borderWidth: 2,
+                    tension: 0.3,
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    pointRadius: 3,
+                    spanGaps: true
+                },
+                {
+                    label: 'Forecast',
+                    data: forecastData,
+                    borderDash: [6, 4],
+                    borderWidth: 2,
+                    tension: 0.3,
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    pointRadius: 3,
+                    spanGaps: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'top' }
+            },
+            scales: {
+                x: { display: true },
+                y: {
+                    display: true,
+                    beginAtZero: true
+                }
+            }
         }
     });
 
+    // pie chart for clients (client_labels/client_values come from context)
     const pieCtx = document.getElementById('pieChart').getContext('2d');
-    new Chart(pieCtx, {
-        type: 'doughnut',
-        data: {
-            labels: {{ client_labels|safe }},
-            datasets: [{
-                data: {{ client_values|safe }},
-            }]
-        }
-    });
+    const clientLabels = {{ client_labels|safe }};
+    const clientValues = {{ client_values|safe }};
+
+    // if there's no client data, show an empty placeholder to avoid Chart errors
+    if (!clientLabels || clientLabels.length === 0) {
+        // just draw an empty chart with a single grey slice
+        new Chart(pieCtx, {
+            type: 'doughnut',
+            data: { labels: ['No data'], datasets: [{ data: [1], backgroundColor: ['#e9ecef'] }] },
+            options: { plugins: { legend: { display: false } } }
+        });
+    } else {
+        new Chart(pieCtx, {
+            type: 'doughnut',
+            data: { labels: clientLabels, datasets: [{ data: clientValues }] },
+            options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+        });
+    }
+})();
 </script>
 {% endblock %}

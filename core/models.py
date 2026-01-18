@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth import get_user_model
+from datetime import date
 
 
 User = get_user_model()
@@ -44,12 +45,20 @@ class Category(models.Model):
 
 
 class Invoice(models.Model):
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('sent', 'Sent'),
+        ('paid', 'Paid'),
+        ('overdue', 'Overdue'),
+    ]
+
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='invoices')
     project = models.ForeignKey(Project, on_delete=models.SET_NULL, null=True, related_name='invoices')
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, related_name='invoices')
     date = models.DateField()
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     paid = models.BooleanField(default=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='sent')
     description = models.TextField(blank=True)
     external_id = models.CharField(max_length=200, blank=True, help_text="id из CSV/платформы")
 
@@ -60,3 +69,7 @@ class Invoice(models.Model):
 
     def __str__(self):
         return f"{self.date} — {self.amount}"
+
+    @property
+    def is_overdue(self):
+        return (not self.paid) and (self.date < date.today())

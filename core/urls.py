@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import InvoiceListView, InvoiceCreateView, DashboardView, SignUpView, CSVUploadView, ExportInvoicesCSVView
+from .views import InvoiceListView, InvoiceCreateView, DashboardView, SignUpView, CSVUploadView, ExportInvoicesCSVView, InvoiceListApiView
 
 
 app_name = 'core'
@@ -13,4 +13,6 @@ urlpatterns = [
     path('invoices/export/', ExportInvoicesCSVView.as_view(), name='invoice_export'),
     path('dashboard/', DashboardView.as_view(), name='dashboard'),
     path('signup/', SignUpView.as_view(), name='signup'),
+    path('api/invoices/', InvoiceListApiView.as_view(), name='api_invoices'),
+
 ]

@@ -7,8 +7,9 @@ from django.shortcuts import render, redirect
 from django.http import HttpResponse
 from django.db import transaction
 from django.utils import timezone
-
+from django.contrib.auth import login
 import csv
+from django.http import JsonResponse
 from django.db.models import Sum, Avg, Count, Q
 from .models import Invoice, Client, Project, Category
 from .forms import InvoiceForm, CSVUploadForm
@@ -161,5 +162,39 @@ class ExportInvoicesCSVView(LoginRequiredMixin, View):
 
 class SignUpView(CreateView):
     form_class = UserCreationForm
-    success_url = reverse_lazy('login')
     template_name = 'registration/signup.html'
+    success_url = reverse_lazy('core:dashboard')
+
+    def form_valid(self, form):
+        user = form.save()
+        self.object = user
+        login(self.request, user)
+        return redirect(self.get_success_url())
+
+
+class InvoiceListApiView(LoginRequiredMixin, View):
+    def get(self, request, *args, **kwargs):
+        q = request.GET.get('q', '').strip()
+        qs = Invoice.objects.filter(owner=request.user).select_related('project', 'category', 'project__client')
+        if q:
+            qs = qs.filter(
+                Q(project__title__icontains=q) |
+                Q(project__client__name__icontains=q) |
+                Q(external_id__icontains=q) |
+                Q(description__icontains=q)
+            )
+        invoices = qs.order_by('-date')[:200]
+        data = []
+        for inv in invoices:
+            data.append({
+                'id': inv.id,
+                'date': inv.date.isoformat(),
+                'project': inv.project.title if inv.project else '',
+                'client': inv.project.client.name if inv.project and inv.project.client else '',
+                'category': inv.category.name if inv.category else '',
+                'amount': str(inv.amount),
+                'paid': bool(inv.paid),
+                'external_id': inv.external_id,
+                'description': inv.description or '',
+            })
+        return JsonResponse({'invoices': data})

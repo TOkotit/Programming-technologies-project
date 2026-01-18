@@ -118,6 +118,6 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 
-# LOGIN_URL = '/accounts/login/'
-# LOGIN_REDIRECT_URL = '/dashboard/'
-# LOGOUT_REDIRECT_URL = '/accounts/login/'
+LOGIN_URL = '/accounts/login/'
+LOGIN_REDIRECT_URL = 'core:dashboard'
+LOGOUT_REDIRECT_URL = 'login'

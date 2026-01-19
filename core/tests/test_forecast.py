@@ -9,7 +9,6 @@ User = get_user_model()
 class ForecastTest(TestCase):
     def setUp(self):
         self.u = User.objects.create_user(username='testuser', password='pass')
-        # создаём 6 месяцев данных
         Invoice.objects.create(owner=self.u, date=date(2024,1,1), amount=100)
         Invoice.objects.create(owner=self.u, date=date(2024,2,1), amount=200)
         Invoice.objects.create(owner=self.u, date=date(2024,3,1), amount=300)

@@ -102,7 +102,6 @@ class DashboardView(LoginRequiredMixin, TemplateView):
             overdue_count=Count('id')
         )
 
-        # best month
         best = invoices.annotate(month=TruncMonth('date')) \
             .values('month') \
             .annotate(total=Sum('amount')) \
@@ -110,12 +109,10 @@ class DashboardView(LoginRequiredMixin, TemplateView):
             .first()
         best_month = best['month'].strftime('%Y-%m') if best and best.get('month') else None
 
-        # Forecast (this function returns lists of dicts already)
         forecast_dict = forecast_monthly(invoices, months_ahead=6)
         historic_data = forecast_dict.get('historic', []) or []
         forecast_data = forecast_dict.get('forecast', []) or []
 
-        # by client for pie
         by_client = invoices.values('project__client__name').annotate(total=Sum('amount')).order_by('-total')
         client_labels = [x['project__client__name'] or 'Unknown' for x in by_client]
         client_values = [float(x['total'] or 0) for x in by_client]

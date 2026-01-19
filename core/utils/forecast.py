@@ -41,10 +41,10 @@ def triple_exponential_smoothing(series, slen, n_preds, alpha, beta, gamma):
             trend = initial_trend(series, slen)
             result.append(series[0])
             continue
-        if i >= len(series):  # Прогноз
+        if i >= len(series):
             m = i - len(series) + 1
             result.append((smooth + m * trend) + seasonals[i % slen])
-        else:  # Обучение
+        else:
             val = series[i]
             last_smooth, smooth = smooth, alpha * (val - seasonals[i % slen]) + (1 - alpha) * (smooth + trend)
             trend = beta * (smooth - last_smooth) + (1 - beta) * trend
@@ -54,7 +54,6 @@ def triple_exponential_smoothing(series, slen, n_preds, alpha, beta, gamma):
 
 
 def forecast_monthly(invoices_qs, months_ahead=6):
-    # 1. Подготовка данных через NumPy
     monthly = (
         invoices_qs
         .annotate(month=TruncMonth('date'))
@@ -64,14 +63,13 @@ def forecast_monthly(invoices_qs, months_ahead=6):
     )
 
     points = [(r['month'], float(r['total'] or 0)) for r in monthly if r['month']]
-    if len(points) < 4:  # Для Хольта-Уинтерса нужно хотя бы немного данных
+    if len(points) < 4:
         return {'historic': [], 'forecast': []}
 
     series = np.array([p[1] for p in points])
     dates = [p[0] for p in points]
-    slen = 3  # Предположим квартальную сезонность для малых данных, или 12 для годовой
+    slen = 3
 
-    # 2. Оптимизация параметров alpha, beta, gamma через SciPy
     def objective(params):
         a, b, g = params
         preds = triple_exponential_smoothing(series, slen, 0, a, b, g)
@@ -80,10 +78,8 @@ def forecast_monthly(invoices_qs, months_ahead=6):
     opt = minimize(objective, x0=[0.1, 0.1, 0.1], bounds=((0, 1), (0, 1), (0, 1)))
     a_opt, b_opt, g_opt = opt.x
 
-    # 3. Генерация прогноза
     full_series = triple_exponential_smoothing(series, slen, months_ahead, a_opt, b_opt, g_opt)
 
-    # 4. Расчет доверительного интервала (упрощенно через std)
     std_dev = np.std(series - np.array(full_series[:len(series)]))
 
     historic = []

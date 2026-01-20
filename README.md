@@ -42,3 +42,4 @@
     ```bash
    python manage.py runserver
 6. Открыть в браузере: http://127.0.0.1:8000/
+7. Или уже задеплоенный проект https://tokotit.pythonanywhere.com/

@@ -31,8 +31,6 @@ class Project(models.Model):
         return self.title
 
 
-
-
 class Category(models.Model):
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='categories')
     name = models.CharField(max_length=100)
@@ -40,8 +38,6 @@ class Category(models.Model):
 
     def __str__(self):
         return self.name
-
-
 
 
 class Invoice(models.Model):

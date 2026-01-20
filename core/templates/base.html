@@ -18,25 +18,33 @@
 <body>
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
     <div class="container-fluid">
-        <a class="navbar-brand" href="{% url 'core:home' %}">Freelance Income Predictor</a>
-        <div class="collapse navbar-collapse">
-            <ul class="navbar-nav me-auto">
+        <a class="navbar-brand" href="{% url 'core:home' %}">Freelance Predictor</a>
+
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#topNavbar" aria-controls="topNavbar" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="topNavbar">
+            <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                 <li class="nav-item"><a class="nav-link" href="{% url 'core:dashboard' %}">Дашборд</a></li>
                 <li class="nav-item"><a class="nav-link" href="{% url 'core:invoice_list' %}">Инвойсы</a></li>
                 <li class="nav-item"><a class="nav-link" href="{% url 'core:invoice_upload' %}">Import CSV</a></li>
                 <li class="nav-item"><a class="nav-link" href="{% url 'core:invoice_export' %}">Export CSV</a></li>
             </ul>
 
-            <ul class="navbar-nav">
-                <li class="nav-item">
-                  <button id="dark-toggle" class="btn btn-sm btn-outline-light me-2">Тёмная</button>
+            <ul class="navbar-nav align-items-lg-center">
+                <li class="nav-item mb-2 mb-lg-0">
+                  <button id="dark-toggle" class="btn btn-sm btn-outline-light me-lg-2 w-100">Тёмная тема</button>
                 </li>
 
                 {% if user.is_authenticated %}
-                    <li class="nav-item"><span class="nav-link text-light">Привет, {{ user.username }}</span></li>
                     <li class="nav-item">
-                        <form action="{% url 'logout' %}" method="post" style="display:inline;">{% csrf_token %}
-                            <button type="submit" class="btn btn-link nav-link">Выход</button>
+                        <span class="nav-link text-light d-none d-lg-inline">Привет, {{ user.username }}</span>
+                    </li>
+                    <li class="nav-item">
+                        <form action="{% url 'logout' %}" method="post" style="display:inline;">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-link nav-link w-100 text-start">Выход</button>
                         </form>
                     </li>
                 {% else %}
